@@ -77,8 +77,7 @@ func withSession(slot uint, f func(session pkcs11.SessionHandle) error) error {
 	return f(session)
 }
 
-// Create the session pool for a given slot if it does not exist
-// already.
+// Create the session pool for a given slot if it does not exist already.
 func setupSessions(slot uint, width int) error {
 	sessionPoolMutex.Lock()
 	defer sessionPoolMutex.Unlock()

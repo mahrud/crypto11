@@ -206,7 +206,9 @@ func Configure(config *PKCS11Config) (*pkcs11.Ctx, error) {
 		log.Printf("Failed to find Token in any Slot: %s", err.Error())
 		return nil, err
 	}
-	if err = setupSessions(defaultSlot, 0); err != nil {
+	tokenInfo, _ := libHandle.GetTokenInfo(defaultSlot)
+	sessionWidth := tokenInfo.MaxSessionCount
+	if err = setupSessions(defaultSlot, int(sessionWidth)); err != nil {
 		return nil, err
 	}
 	if err = withSession(defaultSlot, func(session pkcs11.SessionHandle) error {
