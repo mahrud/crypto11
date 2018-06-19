@@ -26,14 +26,22 @@ import (
 	"sync"
 )
 
-// Map of slot IDs to session pools
-var sessionPools map[uint]chan pkcs11.SessionHandle = map[uint]chan pkcs11.SessionHandle{}
-
 // Mutex protecting sessionPools
 var sessionPoolMutex sync.Mutex
 
+// Map of slot IDs to session pools
+var sessionPools map[uint]chan pkcs11.SessionHandle = map[uint]chan pkcs11.SessionHandle{}
+var sessionWidth map[uint]uint = map[uint]uint{}
+var sessionLoad  map[uint]uint = map[uint]uint{}
+
+const maxSessionWidth uint = 1024 // could be configurable
+
 // Create a new session for a given slot
 func newSession(slot uint) (pkcs11.SessionHandle, error) {
+	sessionPoolMutex.Lock()
+	defer sessionPoolMutex.Unlock()
+	sessionLoad[slot] = sessionLoad[slot] + 1
+
 	if session, err := libHandle.OpenSession(slot, pkcs11.CKF_SERIAL_SESSION|pkcs11.CKF_RW_SESSION); err != nil {
 		return 0, err
 	} else {
@@ -46,16 +54,17 @@ func newSession(slot uint) (pkcs11.SessionHandle, error) {
 // setupSessions must have been called for the slot already, otherwise
 // there will be a panic.
 func withSession(slot uint, f func(session pkcs11.SessionHandle) error) error {
+
 	var session pkcs11.SessionHandle
 	var err error
+
 	sessionPool := sessionPools[slot]
-	select {
-	case session = <-sessionPool:
-		// nop
-	default:
+	if sessionLoad[slot] < sessionWidth[slot] {
 		if session, err = newSession(slot); err != nil {
 			return err
 		}
+	} else {
+		session = <-sessionPool
 	}
 	defer func() {
 		// TODO better would be to close the session if the pool is full
@@ -66,14 +75,17 @@ func withSession(slot uint, f func(session pkcs11.SessionHandle) error) error {
 
 // Create the session pool for a given slot if it does not exist
 // already.
-func setupSessions(slot uint, max int) error {
+func setupSessions(slot uint, width int) error {
 	sessionPoolMutex.Lock()
 	defer sessionPoolMutex.Unlock()
-	if max <= 0 {
-		max = 1024 // could be configurable
+
+	if width <= 0 {
+		width = int(maxSessionWidth)
 	}
 	if _, ok := sessionPools[slot]; !ok {
-		sessionPools[slot] = make(chan pkcs11.SessionHandle, max)
+		sessionPools[slot] = make(chan pkcs11.SessionHandle, width)
+		sessionWidth[slot] = uint(width)
+		sessionLoad[slot] = 0
 	}
 	return nil
 }
