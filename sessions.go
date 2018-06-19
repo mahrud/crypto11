@@ -27,7 +27,7 @@ import (
 )
 
 // Mutex protecting sessionPools
-var sessionPoolMutex sync.Mutex
+var sessionPoolMutex sync.RWMutex
 
 // Map of slot IDs to session pools
 var sessionPools map[uint]chan pkcs11.SessionHandle = map[uint]chan pkcs11.SessionHandle{}
@@ -38,7 +38,9 @@ const maxSessionWidth uint = 1024 // could be configurable
 
 // Create a new session for a given slot
 func newSession(slot uint) (pkcs11.SessionHandle, error) {
+	sessionPoolMutex.RUnlock()
 	sessionPoolMutex.Lock()
+	defer sessionPoolMutex.RLock()
 	defer sessionPoolMutex.Unlock()
 	sessionLoad[slot] = sessionLoad[slot] + 1
 
@@ -54,6 +56,8 @@ func newSession(slot uint) (pkcs11.SessionHandle, error) {
 // setupSessions must have been called for the slot already, otherwise
 // there will be a panic.
 func withSession(slot uint, f func(session pkcs11.SessionHandle) error) error {
+	sessionPoolMutex.RLock()
+	defer sessionPoolMutex.RUnlock()
 
 	var session pkcs11.SessionHandle
 	var err error
